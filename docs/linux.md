@@ -38,6 +38,14 @@ pnpm -C desktop exec tauri build --debug --no-bundle
 On machines with limited memory, set `CARGO_BUILD_JOBS=4` and
 `CARGO_PROFILE_DEV_DEBUG=0` for the debug build.
 
+## Interface flicker
+
+On the tested WebKitGTK 2.54.1 system, animated interface transitions can blink
+or briefly show an old selection. Enable **Settings → Appearance → Reduce
+Motion** to avoid this. The preference persists across launches. The same
+flicker occurs under native Wayland and XWayland; switching display backends
+does not resolve it.
+
 ## Platform limitations
 
 - Native Work browser execution and the Ask panel's page assistant require
