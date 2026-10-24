@@ -7508,6 +7508,7 @@ dependencies = [
  "dispatch2",
  "futures-lite",
  "getrandom 0.3.4",
+ "global-hotkey",
  "gtk",
  "image",
  "json-patch",

@@ -5770,12 +5770,6 @@ fn install_async_runtime() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    if cfg!(all(unix, not(target_os = "macos"))) {
-        diagnostic!(
-            "Zephium isn't available on Linux yet. We're working on it; follow https://zephium.app for news."
-        );
-        std::process::exit(1);
-    }
     install_async_runtime();
     APP_STARTED.get_or_init(std::time::Instant::now);
     #[cfg(target_os = "macos")]
@@ -6555,7 +6549,7 @@ pub fn run() {
                 );
                 return Err(error.into());
             }
-            #[cfg(feature = "work-product")]
+            #[cfg(all(feature = "work-product", any(target_os = "macos", target_os = "windows")))]
             page_assist::install(app.handle(), engine.clone(), store.clone());
             notes::install(app.handle(), &data_dir, store.clone(), &shell);
             external_links::adopt(app.handle());

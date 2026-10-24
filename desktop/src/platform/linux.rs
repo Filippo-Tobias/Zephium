@@ -39,12 +39,16 @@ mod zero_fixed {
         // Children keep their size_request (stable allocations across gtk
         // passes) while the container reports zero, so requests never
         // become a window minimum and live resize does not collapse views.
+        // Still measure children so GtkFixed never allocates them from a
+        // stale 1x1 requisition before the chrome allocation is applied.
         impl WidgetImpl for ZeroFixed {
             fn preferred_width(&self) -> (i32, i32) {
+                self.parent_preferred_width();
                 (0, 0)
             }
 
             fn preferred_height(&self) -> (i32, i32) {
+                self.parent_preferred_height();
                 (0, 0)
             }
         }
@@ -203,7 +207,15 @@ fn install_composition(
 
     let sized_chrome = chrome.clone();
     fixed.connect_size_allocate(move |_, allocation| {
-        sized_chrome.set_size_request(allocation.width(), allocation.height());
+        let width = allocation.width();
+        let height = allocation.height();
+        if sized_chrome.width_request() != width || sized_chrome.height_request() != height {
+            sized_chrome.set_size_request(width, height);
+        }
+        let desired = gtk::Allocation::new(0, 0, width, height);
+        if sized_chrome.allocation() != desired {
+            sized_chrome.size_allocate(&desired);
+        }
     });
     fixed.show_all();
 
@@ -443,6 +455,19 @@ mod native_composition_tests {
         assert_eq!(fixed.parent().as_ref(), Some(&expected_window));
         assert!(!window.is_visible());
         assert!(!window.is_mapped());
+
+        for (width, height) in [(960, 720), (720, 480), (1200, 800)] {
+            // Measure the children without making their requisitions a
+            // minimum size for the top-level composition container.
+            let _ = fixed.preferred_size();
+            fixed.size_allocate(&gtk::Allocation::new(0, 0, width, height));
+            let _ = fixed.preferred_size();
+            fixed.size_allocate(&gtk::Allocation::new(0, 0, width, height));
+            assert_eq!(chrome.allocated_width(), width);
+            assert_eq!(chrome.allocated_height(), height);
+            assert_eq!(fixed.preferred_width(), (0, 0));
+            assert_eq!(fixed.preferred_height(), (0, 0));
+        }
 
         let (rollback_window, rollback_vbox, rollback_chrome, _rollback_context) =
             tauri_tree(&application);

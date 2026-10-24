@@ -24,6 +24,10 @@ pub(crate) struct LinuxGlobalShortcuts {
 }
 
 impl LinuxGlobalShortcuts {
+    pub(crate) fn is_registered(&self) -> bool {
+        self.registration.is_live()
+    }
+
     pub(crate) fn install(
         window: &WebviewWindow,
         shortcut: Option<LinuxLauncherShortcut>,

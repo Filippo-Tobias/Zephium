@@ -5,8 +5,11 @@
 use std::str::FromStr;
 use std::sync::Mutex;
 
+#[cfg(target_os = "linux")]
+use global_hotkey::hotkey::{Code, HotKey as Shortcut, Modifiers};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+#[cfg(not(target_os = "linux"))]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use zephium_core::ports::store::Store;
 
@@ -182,6 +185,7 @@ fn system(mods: Modifiers, key: Code) -> bool {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 fn register(app: &AppHandle, shortcut: &Shortcut) -> bool {
     let registered = app
         .global_shortcut()
@@ -196,9 +200,20 @@ fn register(app: &AppHandle, shortcut: &Shortcut) -> bool {
     registered.is_ok()
 }
 
+#[cfg(not(target_os = "linux"))]
 fn unregister(app: &AppHandle, shortcut: &Shortcut) {
     let _ = app.global_shortcut().unregister(*shortcut);
 }
+
+// Linux registration belongs to LinuxGlobalShortcuts (portal or X11),
+// rather than the recorder's plugin-backed lifecycle.
+#[cfg(target_os = "linux")]
+fn register(_app: &AppHandle, _shortcut: &Shortcut) -> bool {
+    false
+}
+
+#[cfg(target_os = "linux")]
+fn unregister(_app: &AppHandle, _shortcut: &Shortcut) {}
 
 fn setting(key: &str) -> Option<String> {
     crate::APP_STORE
@@ -250,6 +265,11 @@ pub fn snapshot(app: &AppHandle) -> LauncherTrigger {
             )
         },
     );
+    #[cfg(target_os = "linux")]
+    let registered = registered
+        || app
+            .try_state::<crate::linux_global_shortcuts::LinuxGlobalShortcuts>()
+            .is_some_and(|shortcuts| shortcuts.is_registered());
     #[cfg(target_os = "macos")]
     let accessibility = {
         // Permission can be granted in System Settings at any time; the

@@ -214,15 +214,18 @@ Prerequisites:
   platform: Xcode Command Line Tools on macOS, or the Microsoft C++ Build Tools
   and WebView2 on Windows.
 
+This fork also enables experimental Linux builds using GTK3 and WebKitGTK.
+See [the Linux build guide](docs/linux.md) for dependencies and limitations.
+
 ```sh
-git clone https://github.com/zephium-browser/Zephium.git
+git clone -b feat/linux-desktop https://github.com/Filippo-Tobias/Zephium.git
 cd Zephium
 pnpm install --frozen-lockfile
 pnpm dev
 ```
 
 Development builds use their own `app.zephium.dev` profile, so they do not
-touch the data of an installed Zephium. Linux is not supported yet. See
+touch the data of an installed Zephium. Linux support in this fork is experimental. See
 [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ## Architecture
