@@ -8,6 +8,11 @@ mod platform;
 #[cfg(target_os = "windows")]
 #[path = "downloads/platform_windows.rs"]
 mod platform;
+#[cfg(target_os = "linux")]
+#[path = "downloads/platform_linux.rs"]
+mod platform;
+#[cfg(target_os = "linux")]
+pub(in crate::host) use platform::install as install_linux;
 mod recovery;
 mod ui;
 use platform::{Delegate, DialogLease, DirectoryPanel, Native, SavePanel, Source, Timer};
@@ -27,7 +32,7 @@ use zephium_core::ids::{DownloadId, ProfileId};
 use zephium_core::permissions::PageOrigin;
 use zephium_core::ports::{engine::Partition, store::Store};
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use super::download_files::verify_file;
 use super::download_files::Destination;
 use super::permits::EventPermit;
@@ -636,6 +641,8 @@ impl Downloads {
     fn message(self: &Rc<Self>, message: Message) {
         #[cfg(target_os = "macos")]
         let native_notice = matches!(message, Message::Cancelled(_));
+        #[cfg(target_os = "linux")]
+        let native_notice = false;
         #[cfg(target_os = "windows")]
         let native_notice = matches!(message, Message::RuntimeExited(_));
         if !native_notice {

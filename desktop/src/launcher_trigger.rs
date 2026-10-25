@@ -284,7 +284,7 @@ pub fn snapshot(app: &AppHandle) -> LauncherTrigger {
         shortcut,
         default_shortcut: DEFAULT.into(),
         registered,
-        editable: cfg!(not(target_os = "linux")),
+        editable: true,
         double_tap,
         double_tap_supported: cfg!(target_os = "macos"),
         accessibility,
@@ -296,47 +296,77 @@ pub fn set_shortcut(app: &AppHandle, accelerator: &str) -> TriggerChange {
         reason,
         trigger: snapshot(app),
     };
-    if cfg!(target_os = "linux") {
-        return rejected(Rejection::Unsupported);
-    }
-    let shortcut = match validate(accelerator) {
+    let _shortcut = match validate(accelerator) {
         Ok(shortcut) => shortcut,
         Err(reason) => return rejected(reason),
     };
     let Some(trigger) = app.try_state::<Trigger>() else {
         return rejected(Rejection::Unavailable);
     };
-    let previous = {
-        let mut state = trigger.0.lock().unwrap_or_else(|e| e.into_inner());
-        state.recording = false;
-        state.registered.take()
-    };
-    if let Some(previous) = &previous {
-        unregister(app, previous);
-    }
-    if !register(app, &shortcut) {
-        // Put back what worked rather than leave the launcher unreachable.
-        let restored = previous.filter(|previous| register(app, previous));
-        trigger
-            .0
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .registered = restored;
-        return rejected(Rejection::Unavailable);
-    }
+    #[cfg(target_os = "linux")]
     {
+        let Some(native) = crate::linux_shortcut::LinuxLauncherShortcut::parse(accelerator) else {
+            return rejected(Rejection::Invalid);
+        };
+        if !crate::linux_global_shortcuts::reconfigure(app, Some(native)) {
+            return rejected(Rejection::Unavailable);
+        }
         let mut state = trigger.0.lock().unwrap_or_else(|e| e.into_inner());
         state.shortcut = accelerator.to_owned();
-        state.registered = Some(shortcut);
+        state.recording = false;
+        state.registered = None;
+        drop(state);
+        persist(SHORTCUT_KEY, accelerator);
+        return TriggerChange::Applied {
+            trigger: snapshot(app),
+        };
     }
-    persist(SHORTCUT_KEY, accelerator);
-    TriggerChange::Applied {
-        trigger: snapshot(app),
+    #[cfg(not(target_os = "linux"))]
+    {
+        let shortcut = _shortcut;
+        let previous = {
+            let mut state = trigger.0.lock().unwrap_or_else(|e| e.into_inner());
+            state.recording = false;
+            state.registered.take()
+        };
+        if let Some(previous) = &previous {
+            unregister(app, previous);
+        }
+        if !register(app, &shortcut) {
+            // Put back what worked rather than leave the launcher unreachable.
+            let restored = previous.filter(|previous| register(app, previous));
+            trigger
+                .0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .registered = restored;
+            return rejected(Rejection::Unavailable);
+        }
+        {
+            let mut state = trigger.0.lock().unwrap_or_else(|e| e.into_inner());
+            state.shortcut = accelerator.to_owned();
+            state.registered = Some(shortcut);
+        }
+        persist(SHORTCUT_KEY, accelerator);
+        TriggerChange::Applied {
+            trigger: snapshot(app),
+        }
     }
 }
 
 /// While a new shortcut is being recorded the current one must not fire, or
 /// pressing it to re-record would open the launcher instead.
+#[cfg(target_os = "linux")]
+pub(crate) fn is_recording(app: &AppHandle) -> bool {
+    app.try_state::<Trigger>().is_some_and(|trigger| {
+        trigger
+            .0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .recording
+    })
+}
+
 pub fn recording(app: &AppHandle, active: bool) {
     let Some(trigger) = app.try_state::<Trigger>() else {
         return;
@@ -346,28 +376,42 @@ pub fn recording(app: &AppHandle, active: bool) {
         return;
     }
     state.recording = active;
-    let current = state.registered.take();
+    let _current = state.registered.take();
     let shortcut = state.shortcut.clone();
     drop(state);
-    if active {
-        if let Some(current) = &current {
-            unregister(app, current);
+    #[cfg(target_os = "linux")]
+    {
+        // Release the compositor's grab while recording, so the current
+        // global chord can itself reach the recorder. A closed worker cannot
+        // clear its successor's shared registration flag.
+        let native = (!active)
+            .then(|| crate::linux_shortcut::LinuxLauncherShortcut::parse(&shortcut))
+            .flatten();
+        let _ = crate::linux_global_shortcuts::reconfigure(app, native);
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let current = _current;
+        if active {
+            if let Some(current) = &current {
+                unregister(app, current);
+            }
+            trigger
+                .0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .registered = current;
+            return;
         }
+        let restored = Shortcut::from_str(&shortcut)
+            .ok()
+            .filter(|shortcut| register(app, shortcut));
         trigger
             .0
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .registered = current;
-        return;
+            .registered = restored;
     }
-    let restored = Shortcut::from_str(&shortcut)
-        .ok()
-        .filter(|shortcut| register(app, shortcut));
-    trigger
-        .0
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .registered = restored;
 }
 
 pub fn set_double_tap(app: &AppHandle, mode: DoubleTap) -> LauncherTrigger {

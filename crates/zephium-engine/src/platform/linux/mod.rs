@@ -1,16 +1,26 @@
 //! Linux adapter. Content views are built into a gtk::Fixed owned by the
 //! composition root; the stage positions them and draws the drop indicator.
 
+#[cfg(feature = "agentic-browser")]
+pub(crate) mod browse_reader;
+#[cfg(feature = "agentic-browser")]
+pub(crate) mod page_glow;
+
+pub(crate) mod capture;
 mod content_filter;
 mod find;
+mod notifications;
 mod stage;
 
-pub(crate) fn external_app_name(_url: &str) -> Option<String> {
-    None
+pub(crate) fn external_app_name(value: &str) -> Option<String> {
+    use gtk::gio::prelude::AppInfoExt;
+    let url = url::Url::parse(value).ok()?;
+    gtk::gio::AppInfo::default_for_uri_scheme(url.scheme())
+        .map(|app| app.display_name().to_string())
 }
 
-pub(crate) fn open_external_app(_url: &str) -> bool {
-    false
+pub(crate) fn open_external_app(value: &str) -> bool {
+    gtk::gio::AppInfo::launch_default_for_uri(value, None::<&gtk::gio::AppLaunchContext>).is_ok()
 }
 
 pub(crate) use content_filter::{
@@ -39,8 +49,8 @@ use gtk::prelude::WidgetExt as _;
 #[cfg(any(test, feature = "native-isolation-probes"))]
 use webkit2gtk::UserContentManager;
 use webkit2gtk::{
-    DownloadExt, UserContentInjectedFrames, UserContentManagerExt, UserScript,
-    UserScriptInjectionTime, WebContextExt, WebViewExt, WebsiteDataManagerExt,
+    UserContentInjectedFrames, UserContentManagerExt, UserScript, UserScriptInjectionTime,
+    WebContextExt, WebViewExt, WebsiteDataManagerExt,
 };
 use wry::WebViewExtUnix;
 use zephium_core::ports::engine::{Partition, ScriptPrincipal};
@@ -132,9 +142,8 @@ impl PrincipalContentMessage {
     }
 }
 
-// javascriptcore-rs is a private implementation dependency of Wry, not a
-// Zephium API dependency. Use the stable JSC C ABI to perform the two bounded
-// string operations needed at this native trust boundary.
+// The stable JSC C ABI exposes a byte count before allocating a Rust string,
+// which keeps this hostile-message boundary bounded.
 #[cfg(any(test, feature = "native-isolation-probes"))]
 #[allow(dead_code)]
 unsafe extern "C" {
@@ -421,19 +430,7 @@ pub fn configure(
     }
     attest_website_data_manager(&view, &context, partition, expected_data_directory)?;
 
-    // `download-started` belongs to WebContext, not WebView. Persistent tabs
-    // share a context, so registering Wry's per-builder callback on every tab
-    // would retain one more closure for the lifetime of the profile. Mark the
-    // GLib object and install one fail-closed handler before the first load.
-    const DOWNLOAD_DENY_MARKER: &str = "zephium-download-deny-installed";
-    // SAFETY: this private key is written and read only as `bool` here, and
-    // the marker lives exactly as long as the context GLib object.
-    let installed = unsafe { context.data::<bool>(DOWNLOAD_DENY_MARKER).is_some() };
-    if !installed {
-        context.connect_download_started(|_, download| download.cancel());
-        // SAFETY: see the typed private-key invariant above.
-        unsafe { context.set_data(DOWNLOAD_DENY_MARKER, true) };
-    }
+    notifications::install(&view);
 
     Ok(())
 }
@@ -1479,7 +1476,8 @@ mod tests {
         assert_eq!(
             enforce_runtime_version(
                 (2, 54, 1),
-                zephium_core::webkitgtk::SECURITY_FLOOR_REVIEW_DEADLINE_EXCLUSIVE_UNIX_SECONDS,
+                zephium_core::webkitgtk::SECURITY_FLOOR_REVIEW_DEADLINE_EXCLUSIVE_UNIX_SECONDS
+                    + zephium_core::runtime_security::RUNTIME_REVIEW_GRACE_SECONDS,
             ),
             Ok(
                 zephium_core::runtime_security::RuntimeSecurityAdvisories::from_advisory(

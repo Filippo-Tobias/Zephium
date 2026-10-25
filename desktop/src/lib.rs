@@ -5770,6 +5770,12 @@ fn install_async_runtime() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("GTK_USE_PORTAL").is_none() {
+        // GTK3 otherwise prefers its in-process picker outside a sandbox.
+        // FileChooserNative falls back when the desktop has no portal.
+        std::env::set_var("GTK_USE_PORTAL", "1");
+    }
     install_async_runtime();
     APP_STARTED.get_or_init(std::time::Instant::now);
     #[cfg(target_os = "macos")]
@@ -6262,10 +6268,11 @@ pub fn run() {
             let focused_shortcut_presses = platform::imp::FocusedShortcutPresses::default();
             #[cfg(target_os = "linux")]
             let linux_launcher_shortcut = {
-                let accelerator = zephium_core::commands::resolve(&keymap)
+                let accelerator = store.app_setting("launcher.shortcut").or_else(||
+                    zephium_core::commands::resolve(&keymap)
                     .iter()
                     .find(|command| command.id == linux_shortcut::LAUNCHER_COMMAND_ID)
-                    .and_then(|command| command.accelerator.clone());
+                    .and_then(|command| command.accelerator.clone()));
                 let shortcut = accelerator
                     .as_deref()
                     .and_then(linux_shortcut::LinuxLauncherShortcut::parse);
@@ -6549,7 +6556,7 @@ pub fn run() {
                 );
                 return Err(error.into());
             }
-            #[cfg(all(feature = "work-product", any(target_os = "macos", target_os = "windows")))]
+            #[cfg(all(feature = "work-product", any(target_os = "macos", target_os = "windows", target_os = "linux")))]
             page_assist::install(app.handle(), engine.clone(), store.clone());
             notes::install(app.handle(), &data_dir, store.clone(), &shell);
             external_links::adopt(app.handle());
@@ -6911,7 +6918,6 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             create_panel()?;
 
-            #[cfg(not(target_os = "linux"))]
             {
                 app.manage(launcher_trigger::Trigger::default());
                 // Honoured for a profile that stored one before the launcher
@@ -6932,7 +6938,7 @@ pub fn run() {
                     linux_launcher_shortcut,
                     global_registration,
                     move |context| {
-                        if shutdown_started(&shortcut_app) {
+                        if shutdown_started(&shortcut_app) || launcher_trigger::is_recording(&shortcut_app) {
                             return;
                         }
                         if let Some(overlay) = shortcut_app.try_state::<overlay::Overlay>() {

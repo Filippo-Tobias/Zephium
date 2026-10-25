@@ -32,7 +32,7 @@ pub(crate) struct Keymap {
     #[cfg(target_os = "linux")]
     window_table: Arc<RwLock<Vec<Shortcut>>>,
     #[cfg(target_os = "linux")]
-    linux_launcher: OnceLock<Option<linux_shortcut::LinuxLauncherShortcut>>,
+    linux_launcher: RwLock<Option<linux_shortcut::LinuxLauncherShortcut>>,
     /// Keyboard-only commands, read by the macOS key monitor. Everything else
     /// on macOS is a menu key equivalent.
     #[cfg(target_os = "macos")]
@@ -102,9 +102,18 @@ impl Keymap {
         &self,
         launcher: Option<linux_shortcut::LinuxLauncherShortcut>,
     ) -> Arc<RwLock<Vec<Shortcut>>> {
-        let _ = self.linux_launcher.set(launcher);
+        *write(&self.linux_launcher) = launcher;
         self.refresh_tables();
         self.window_table.clone()
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn set_linux_launcher(
+        &self,
+        launcher: Option<linux_shortcut::LinuxLauncherShortcut>,
+    ) {
+        *write(&self.linux_launcher) = launcher;
+        self.refresh_tables();
     }
 
     #[cfg(target_os = "macos")]
@@ -125,8 +134,10 @@ impl Keymap {
             } else {
                 self.engine_table()
             };
-            if let Some(Some(launcher)) = self.linux_launcher.get().filter(|_| !recording) {
-                table.push(launcher.focused_shortcut());
+            if !recording {
+                if let Some(launcher) = *read(&self.linux_launcher) {
+                    table.push(launcher.focused_shortcut());
+                }
             }
             *write(&self.window_table) = table;
         }
@@ -551,6 +562,23 @@ mod tests {
         assert!(read(&keymap.key_table)
             .iter()
             .any(|(_, id)| *id == "work.dictate"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn launcher_rebinding_replaces_the_shared_focused_table_and_recording_suppresses_it() {
+        let keymap = Keymap::default();
+        let old = linux_shortcut::LinuxLauncherShortcut::parse("Ctrl+Shift+Space").unwrap();
+        let new = linux_shortcut::LinuxLauncherShortcut::parse("Ctrl+Alt+K").unwrap();
+        let table = keymap.window_table(Some(old));
+        assert!(read(&table).contains(&old.focused_shortcut()));
+        keymap.set_linux_launcher(Some(new));
+        assert!(!read(&table).contains(&old.focused_shortcut()));
+        assert!(read(&table).contains(&new.focused_shortcut()));
+        keymap.set_recording(true);
+        assert!(read(&table).is_empty());
+        keymap.set_recording(false);
+        assert!(read(&table).contains(&new.focused_shortcut()));
     }
 
     #[test]

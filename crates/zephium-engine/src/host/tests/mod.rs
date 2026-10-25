@@ -851,7 +851,7 @@ fn raw_native_media_surfaces_are_deny_only_or_exactly_brokered_per_view() {
 
     use super::construction::raw_content_permission;
     use wry::{PermissionKind, PermissionResponse};
-    let media = if cfg!(windows) {
+    let media = if cfg!(any(windows, target_os = "linux")) {
         PermissionResponse::Prompt
     } else {
         PermissionResponse::Deny
@@ -866,7 +866,18 @@ fn raw_native_media_surfaces_are_deny_only_or_exactly_brokered_per_view() {
         PermissionKind::Sensors,
         PermissionKind::Other,
     ] {
-        assert_eq!(raw_content_permission(kind), PermissionResponse::Deny);
+        let expected = if cfg!(target_os = "linux")
+            && matches!(
+                kind,
+                PermissionKind::DisplayCapture
+                    | PermissionKind::Geolocation
+                    | PermissionKind::Notifications
+            ) {
+            PermissionResponse::Prompt
+        } else {
+            PermissionResponse::Deny
+        };
+        assert_eq!(raw_content_permission(kind), expected);
     }
 }
 

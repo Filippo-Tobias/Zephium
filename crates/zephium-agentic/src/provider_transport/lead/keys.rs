@@ -272,7 +272,7 @@ mod platform {
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 mod platform {
     use super::{LeadKeyError, LeadSecret};
     use zephium_credentials::VaultError;
@@ -316,7 +316,7 @@ mod platform {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 mod platform {
     use super::{LeadKeyError, LeadSecret};
 

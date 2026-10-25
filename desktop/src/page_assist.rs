@@ -70,7 +70,7 @@ fn valid_id(id: &str) -> bool {
 
 #[cfg(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 ))]
 mod product {
     use super::*;
@@ -410,7 +410,11 @@ mod product {
 
     impl PagePort for DesktopPage {
         fn supported(&self) -> bool {
-            cfg!(any(target_os = "macos", target_os = "windows"))
+            cfg!(any(
+                target_os = "macos",
+                target_os = "windows",
+                target_os = "linux"
+            ))
         }
         fn facts(&self, tab: &str) -> Option<TabFacts> {
             let item = zephium_core::ids::ItemId::parse(tab);
@@ -1152,7 +1156,7 @@ mod product {
 
 #[cfg(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 ))]
 pub(crate) use product::{
     hosted_charged, hosted_sourced, install, observe_items, observe_tab, preference_changed,
@@ -1160,28 +1164,28 @@ pub(crate) use product::{
 
 #[cfg(not(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 )))]
 pub(crate) fn observe_items(_state: &zephium_ipc::ItemsState) {}
 #[cfg(not(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 )))]
 pub(crate) fn observe_tab(_tab: &zephium_ipc::TabView) {}
 #[cfg(not(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 )))]
 pub(crate) fn preference_changed(_key: &str, _value: &str) {}
 
 #[cfg(all(
     feature = "work-product",
-    not(any(target_os = "macos", target_os = "windows"))
+    not(any(target_os = "macos", target_os = "windows", target_os = "linux"))
 ))]
 pub(crate) fn hosted_sourced(_request_id: &str, _conversation: &str, _reply: u32) {}
 #[cfg(all(
     feature = "work-product",
-    not(any(target_os = "macos", target_os = "windows"))
+    not(any(target_os = "macos", target_os = "windows", target_os = "linux"))
 ))]
 pub(crate) fn hosted_charged(
     _request_id: &str,
@@ -1194,7 +1198,7 @@ macro_rules! with_service {
     ($none:expr, |$service:ident| $body:expr) => {{
         #[cfg(all(
             feature = "work-product",
-            any(target_os = "macos", target_os = "windows")
+            any(target_os = "macos", target_os = "windows", target_os = "linux")
         ))]
         {
             match product::service() {
@@ -1204,7 +1208,7 @@ macro_rules! with_service {
         }
         #[cfg(not(all(
             feature = "work-product",
-            any(target_os = "macos", target_os = "windows")
+            any(target_os = "macos", target_os = "windows", target_os = "linux")
         )))]
         {
             $none
@@ -1523,7 +1527,7 @@ pub(crate) async fn page_style_remove(
 
 #[cfg(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 ))]
 fn profile_of(profile: &str) -> Option<zephium_core::ids::ProfileId> {
     zephium_core::ids::ProfileId::parse(profile).filter(|id| id.to_string() == profile)
@@ -1604,7 +1608,7 @@ mod tests {
 /// owner the panel's own Work flow uses, in order.
 #[cfg(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 ))]
 mod handoff {
     use super::*;

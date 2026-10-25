@@ -49,7 +49,7 @@ impl SecretVault for SystemVault {
 }
 
 fn service(profile: &str, server: &str) -> String {
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
         let encode =
             |value: &str| -> String { value.bytes().map(|byte| format!("{byte:02x}")).collect() };
@@ -59,11 +59,11 @@ fn service(profile: &str, server: &str) -> String {
             encode(server)
         )
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     format!("app.zephium.connection.{profile}.{server}")
 }
 
-#[cfg(all(test, target_os = "windows"))]
+#[cfg(all(test, any(target_os = "windows", target_os = "linux")))]
 mod windows_targets {
     use super::service;
 
@@ -205,11 +205,11 @@ mod platform {
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 #[path = "keychain_windows.rs"]
 mod platform;
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 mod platform {
     use super::KeychainError;
     pub(super) fn read(_: &str, _: &str) -> Result<String, KeychainError> {

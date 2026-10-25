@@ -21,6 +21,7 @@ pub(crate) struct LinuxGlobalShortcuts {
     registration: GlobalRegistration,
     target: Arc<ActivationTarget>,
     x11_shortcut: Mutex<Option<X11Shortcut>>,
+    portal_worker: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl LinuxGlobalShortcuts {
@@ -41,6 +42,7 @@ impl LinuxGlobalShortcuts {
             registration,
             target: Arc::new(ActivationTarget::new(activation)),
             x11_shortcut: Mutex::new(None),
+            portal_worker: Mutex::new(None),
         };
         state.install_x11_backend();
         state
@@ -76,10 +78,11 @@ impl LinuxGlobalShortcuts {
                     }
                 }
             });
-        if let Err(error) = spawn {
-            crate::write_diagnostic(format_args!(
+        match spawn {
+            Ok(worker) => *lock_recover(&self.portal_worker) = Some(worker),
+            Err(error) => crate::write_diagnostic(format_args!(
                 "global shortcut: could not start Wayland portal worker; focused-window fallback remains active: {error}"
-            ));
+            )),
         }
     }
 
@@ -89,6 +92,9 @@ impl LinuxGlobalShortcuts {
         let shortcut = lock_recover(&self.x11_shortcut).take();
         if let Some(shortcut) = shortcut {
             shortcut.shutdown();
+        }
+        if let Some(worker) = lock_recover(&self.portal_worker).take() {
+            let _ = worker.join();
         }
     }
 
@@ -119,6 +125,37 @@ impl LinuxGlobalShortcuts {
         };
         *lock_recover(&self.x11_shortcut) = Some(shortcut);
     }
+}
+
+pub(crate) fn reconfigure(app: &tauri::AppHandle, shortcut: Option<LinuxLauncherShortcut>) -> bool {
+    let Some(window) = app.get_webview_window(crate::MAIN_LABEL) else {
+        return false;
+    };
+    let Some(previous) = app.unmanage::<LinuxGlobalShortcuts>() else {
+        return false;
+    };
+    let registration = previous.registration.clone();
+    previous.shutdown();
+    let activation_app = app.clone();
+    let replacement =
+        LinuxGlobalShortcuts::install(&window, shortcut, registration, move |context| {
+            if crate::shutdown_started(&activation_app)
+                || crate::launcher_trigger::is_recording(&activation_app)
+            {
+                return;
+            }
+            if let Some(overlay) = activation_app.try_state::<crate::overlay::Overlay>() {
+                overlay.toggle_with_activation(context.activation_token, context.timestamp);
+            }
+        });
+    let managed = app.manage(replacement);
+    if managed {
+        if let Some(state) = app.try_state::<crate::keymap::Keymap>() {
+            state.set_linux_launcher(shortcut);
+        }
+        main_window_mapped(&window);
+    }
+    managed
 }
 
 pub(crate) fn main_window_mapped(window: &WebviewWindow) {

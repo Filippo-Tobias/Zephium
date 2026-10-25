@@ -22,6 +22,8 @@ use crate::platform::page_recipe::{
     PickState, MAX_MARKS,
 };
 
+#[cfg(target_os = "linux")]
+pub(super) type Reader = crate::platform::linux::browse_reader::BrowseReader;
 #[cfg(target_os = "macos")]
 pub(super) type Reader = crate::platform::macos::browse_reader::BrowseReader;
 #[cfg(target_os = "windows")]
@@ -84,7 +86,7 @@ pub(super) fn attempt(slot: &Weak<RefCell<Option<Reader>>>, target: &str) {
 }
 
 /// A main-frame load begins; macOS learns it from the attempt instead.
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 pub(super) fn begin_load(slot: &Weak<RefCell<Option<Reader>>>) {
     let Some(slot) = slot.upgrade() else {
         return;

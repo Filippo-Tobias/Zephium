@@ -22,8 +22,7 @@ use zephium_agentic::{
 };
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use zephium_agentic::{
-    ContextJoin, ContextNavigationReplacement, ContextNavigationTarget, ContextOperationKind,
-    ContextRendererLoss,
+    ContextJoin, ContextNavigationReplacement, ContextNavigationTarget, ContextRendererLoss,
 };
 #[cfg(target_os = "macos")]
 use zephium_agentic::{SemanticScreenshotNativeCapture, SemanticScreenshotNativeFailure};
@@ -34,6 +33,7 @@ use zephium_agentic::{
 };
 
 use crate::MainThreadDispatch;
+use zephium_agentic::ContextOperationKind;
 
 #[cfg(all(target_os = "macos", feature = "native-agentic-foreground-probe"))]
 #[path = "agent_foreground_probe_port.rs"]
@@ -1649,7 +1649,15 @@ impl AgentBrowserPort for EngineAgentBrowserPort {
         lease: &zephium_agentic::WorkBrowserExecutionLease,
         context: zephium_agentic::ContextJoin,
     ) -> bool {
-        self.native_image_public_candidate(lease, context)
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        {
+            self.native_image_public_candidate(lease, context)
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            let _ = (lease, context);
+            false
+        }
     }
 
     fn claim_work_screenshot_source(
@@ -1657,7 +1665,15 @@ impl AgentBrowserPort for EngineAgentBrowserPort {
         lease: &zephium_agentic::WorkBrowserExecutionLease,
         image: &zephium_agentic::SemanticScreenshot,
     ) -> Option<Arc<dyn zephium_agentic::SemanticScreenshotSource>> {
-        self.claim_native_image_source(lease, image)
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        {
+            self.claim_native_image_source(lease, image)
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            let _ = (lease, image);
+            None
+        }
     }
 
     #[cfg(all(
@@ -1733,6 +1749,17 @@ impl AgentBrowserPort for EngineAgentBrowserPort {
     }
 
     fn dispatch(&self, request: ContextNativeRequest) -> ContextDispatch {
+        // Retirement wins even on a platform without this request adapter.
+        // Otherwise an old lifetime reports reusable capability after sealing.
+        if self.admission.lineage_failed()
+            || self
+                .admission
+                .state
+                .lock()
+                .map_or(true, |state| state.sealed || state.invariant_failed)
+        {
+            return ContextDispatch::Rejected(ContextPortFailure::Shutdown);
+        }
         if self.admission.group.is_some() {
             return ContextDispatch::Rejected(ContextPortFailure::NativeRefused);
         }

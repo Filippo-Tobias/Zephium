@@ -54,7 +54,7 @@ fn record_presence(profile: ProfileId, present: bool) {
 
 #[cfg(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 ))]
 fn load_presence() -> bool {
     // Exactly what a run treats as usable: anything else already falls back.
@@ -63,7 +63,7 @@ fn load_presence() -> bool {
 
 #[cfg(not(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 )))]
 fn load_presence() -> bool {
     false
@@ -96,7 +96,7 @@ async fn typesafe_key_present(profile: ProfileId) -> bool {
 /// Observation from the one site that already loads the key for a real run.
 #[cfg(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 ))]
 pub(crate) fn observe_typesafe_key(profile: ProfileId, epoch: u64, present: bool) {
     let _turn = PRESENCE_TURN
@@ -109,7 +109,7 @@ pub(crate) fn observe_typesafe_key(profile: ProfileId, epoch: u64, present: bool
 
 #[cfg(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 ))]
 pub(crate) fn typesafe_presence_epoch() -> u64 {
     TYPESAFE_EPOCH.load(Ordering::Acquire)
@@ -117,7 +117,7 @@ pub(crate) fn typesafe_presence_epoch() -> u64 {
 
 #[cfg(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 ))]
 fn begin_presence_mutation() {
     let _presence = PRESENCE_TURN
@@ -129,7 +129,7 @@ fn begin_presence_mutation() {
 
 #[cfg(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 ))]
 fn finish_presence_mutation(profile: ProfileId, present: Option<bool>) {
     let _presence = PRESENCE_TURN
@@ -180,7 +180,7 @@ async fn write_choice(profile: ProfileId, choice: WorkDecisionChoiceV1) -> Resul
 /// configuration it was constructed with.
 #[cfg(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 ))]
 pub(crate) async fn selected_choice(profile: ProfileId) -> WorkDecisionChoiceV1 {
     read_choice(profile).await
@@ -188,7 +188,7 @@ pub(crate) async fn selected_choice(profile: ProfileId) -> WorkDecisionChoiceV1 
 
 #[cfg(all(
     feature = "work-product",
-    any(target_os = "macos", target_os = "windows")
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
 ))]
 pub(crate) fn composition_preference(
     choice: WorkDecisionChoiceV1,
@@ -211,7 +211,7 @@ async fn confirm_profile(app: &tauri::AppHandle, expected: &str) -> Result<Profi
         .ok_or(WorkError::Invalid)?;
     #[cfg(all(
         feature = "work-product",
-        any(target_os = "macos", target_os = "windows")
+        any(target_os = "macos", target_os = "windows", target_os = "linux")
     ))]
     {
         let request = app.state::<zephium_app::Handle>().work_profile_binding();
@@ -237,7 +237,7 @@ async fn confirm_profile(app: &tauri::AppHandle, expected: &str) -> Result<Profi
     }
     #[cfg(not(all(
         feature = "work-product",
-        any(target_os = "macos", target_os = "windows")
+        any(target_os = "macos", target_os = "windows", target_os = "linux")
     )))]
     {
         let _ = profile;
@@ -327,7 +327,7 @@ async fn mutate_key(
         }
         #[cfg(all(
             feature = "work-product",
-            any(target_os = "macos", target_os = "windows")
+            any(target_os = "macos", target_os = "windows", target_os = "linux")
         ))]
         {
             use zephium_agentic::lead::{keys, LeadSecret};
@@ -366,7 +366,7 @@ async fn mutate_key(
         }
         #[cfg(not(all(
             feature = "work-product",
-            any(target_os = "macos", target_os = "windows")
+            any(target_os = "macos", target_os = "windows", target_os = "linux")
         )))]
         {
             let _ = (app, secret);
@@ -432,7 +432,7 @@ mod tests {
 
     #[cfg(all(
         feature = "work-product",
-        any(target_os = "macos", target_os = "windows")
+        any(target_os = "macos", target_os = "windows", target_os = "linux")
     ))]
     #[test]
     fn late_provider_observations_cannot_override_acknowledged_key_mutations() {

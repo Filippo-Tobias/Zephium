@@ -155,6 +155,26 @@ impl EngineHost {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    pub(crate) fn stop_media_capture(
+        &mut self,
+        id: ItemId,
+        navigation: zephium_core::ports::engine::NavigationPresentationId,
+    ) {
+        use webkit2gtk::WebViewExt;
+        use wry::WebViewExtUnix;
+        if let Some(view) = self.views.get(&id).filter(|view| {
+            view.navigation
+                .resident_media_epoch()
+                .is_some_and(|epoch| epoch.presentation_id() == navigation)
+        }) {
+            let native = view.view.webview();
+            native.set_camera_capture_state(webkit2gtk::MediaCaptureState::None);
+            native.set_microphone_capture_state(webkit2gtk::MediaCaptureState::None);
+            native.set_display_capture_state(webkit2gtk::MediaCaptureState::None);
+        }
+    }
+
     pub(crate) fn print(&self, id: ItemId) {
         if let Some(view) = self.views.get(&id) {
             let _ = view.print();

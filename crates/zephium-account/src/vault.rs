@@ -21,13 +21,16 @@ pub trait AccountVault: Send + Sync {
     fn present(&self, origin: &str) -> Result<bool, VaultFault>;
 }
 
-/// The Keychain on macOS and Credential Manager on Windows.
+/// The platform vault, including the desktop Secret Service on Linux.
 pub struct SystemVault;
 
 /// The item every origin shared before bearers were scoped to one.
 const UNSCOPED: &str = "app.zephium.account";
 
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+    allow(dead_code)
+)]
 fn item(origin: &str) -> String {
     format!("{UNSCOPED}|{origin}")
 }
@@ -36,7 +39,7 @@ impl SystemVault {
     /// Removes the bearer kept before scoping. Its origin was never recorded,
     /// so it cannot be trusted to any one server and is never read.
     pub fn drop_unscoped(&self) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         {
             let Ok(_turn) = zephium_credentials::turn() else {
                 return;
@@ -48,7 +51,7 @@ impl SystemVault {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod platform {
     use super::{item, AccountToken, AccountVault, SystemVault, VaultFault};
     use zephium_credentials::VaultError;
@@ -97,7 +100,7 @@ mod platform {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 impl AccountVault for SystemVault {
     fn load(&self, _: &str) -> Result<AccountToken, VaultFault> {
         Err(VaultFault::Missing)

@@ -29,7 +29,7 @@ use std::ffi::c_ulong;
 #[cfg(any(debug_assertions, feature = "devtools"))]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
-  cell::Cell,
+  cell::{Cell, RefCell},
   collections::HashMap,
   rc::Rc,
   sync::{Arc, Mutex},
@@ -375,6 +375,40 @@ impl Drop for InnerWebView {
   fn drop(&mut self) {
     unsafe { self.webview.destroy() }
   }
+}
+
+fn prompt_page_permission(view: &WebView, request: &webkit2gtk::PermissionRequest, action: &str) {
+  let window = view.toplevel().and_then(|w| w.downcast::<gtk::Window>().ok());
+  let uri = view.uri().map(|uri| uri.to_string());
+  let origin = uri.as_deref().and_then(|uri| url::Url::parse(uri).ok())
+    .filter(|url| matches!(url.scheme(), "http" | "https"))
+    .map(|url| url.origin().ascii_serialization());
+  let Some((window, origin)) = window.zip(origin) else { request.deny(); return; };
+  if !view.is_visible() || !window.is_active() { request.deny(); return; }
+  let dialog = gtk::MessageDialog::new(Some(&window), gtk::DialogFlags::DESTROY_WITH_PARENT,
+    gtk::MessageType::Question, gtk::ButtonsType::None,
+    &format!("Allow content on {origin} to {action}?"));
+  dialog.add_button("Deny", gtk::ResponseType::Reject);
+  dialog.add_button("Allow once", gtk::ResponseType::Accept);
+  dialog.set_default_response(gtk::ResponseType::Reject);
+  let navigated = Rc::new(Cell::new(false));
+  let invalidated = navigated.clone();
+  let handler = view.connect_load_changed(move |_, event| {
+    if event == webkit2gtk::LoadEvent::Started { invalidated.set(true); }
+  });
+  let request = request.clone();
+  let view = view.downgrade();
+  let handler = RefCell::new(Some(handler));
+  dialog.connect_response(move |dialog, response| {
+    let live = view.upgrade().is_some_and(|view| {
+      if let Some(handler) = handler.borrow_mut().take() { view.disconnect(handler); }
+      !navigated.get() && view.is_visible() && view.uri().map(|u| u.to_string()) == uri
+    });
+    if response == gtk::ResponseType::Accept && live { request.allow(); }
+    else { request.deny(); }
+    dialog.close();
+  });
+  dialog.show_all();
 }
 
 impl InnerWebView {
@@ -775,6 +809,9 @@ impl InnerWebView {
       settings.set_enable_webaudio(true);
       // Fullscreen is a page-triggered native surface and must remain off
       // until the embedder owns an origin/gesture-labelled lifecycle broker.
+      #[cfg(target_os = "linux")]
+      settings.set_enable_fullscreen(attributes.linux_browser_mode && attributes.fullscreen_enabled);
+      #[cfg(not(target_os = "linux"))]
       settings.set_enable_fullscreen(false);
       settings
         .set_enable_back_forward_navigation_gestures(attributes.back_forward_navigation_gestures);
@@ -1025,8 +1062,12 @@ impl InnerWebView {
     // Every engine-owned prompt is denied unless an embedder explicitly
     // brokers and allows it. `Default` is also fail-closed in this fork: it
     // must never delegate to an unlabelled native WebKit prompt.
+    #[cfg(target_os = "linux")]
+    let browser_mode = attributes.linux_browser_mode;
+    #[cfg(not(target_os = "linux"))]
+    let browser_mode = false;
     let permission_handler = attributes.permission_handler.take();
-    webview.connect_permission_request(move |_webview, request| {
+    webview.connect_permission_request(move |webview, request| {
       let response_for = |kind| {
         permission_handler
           .as_ref()
@@ -1052,46 +1093,33 @@ impl InnerWebView {
               true
             }
             PermissionResponse::Default | PermissionResponse::Prompt => {
-              request.deny();
+              if browser_mode && response == PermissionResponse::Prompt {
+                prompt_page_permission(webview, request, "share your screen");
+              } else { request.deny(); }
               true
             }
           };
         }
 
-        // For combined audio+video requests, check each individually.
-        // Deny wins: if either is denied, deny the whole request.
-        let mut allow = true;
-        let mut handled = false;
-
-        if is_audio {
-          handled = true;
-          match response_for(PermissionKind::Microphone) {
-            PermissionResponse::Allow => {}
-            PermissionResponse::Deny => allow = false,
-            PermissionResponse::Default | PermissionResponse::Prompt => allow = false,
+        let kinds = [(is_audio, PermissionKind::Microphone), (is_video, PermissionKind::Camera)];
+        let mut prompt = false;
+        for (_, kind) in kinds.iter().filter(|(requested, _)| *requested) {
+          match response_for(*kind) {
+            PermissionResponse::Allow => {},
+            PermissionResponse::Prompt if browser_mode => prompt = true,
+            _ => { request.deny(); return true; }
           }
         }
-
-        if is_video && allow {
-          handled = true;
-          match response_for(PermissionKind::Camera) {
-            PermissionResponse::Allow => {}
-            PermissionResponse::Deny => allow = false,
-            PermissionResponse::Default | PermissionResponse::Prompt => allow = false,
-          }
-        }
-
-        if handled {
-          if allow {
-            request.allow();
-          } else {
-            request.deny();
-          }
-          true
-        } else {
-          request.deny();
-          true
-        }
+        if !is_audio && !is_video { request.deny(); }
+        else if prompt {
+          let action = match (is_audio, is_video) {
+            (true, true) => "use your microphone and camera",
+            (true, false) => "use your microphone",
+            _ => "use your camera",
+          };
+          prompt_page_permission(webview, request, action);
+        } else { request.allow(); }
+        true
       } else {
         let permission_kind = if request.is::<GeolocationPermissionRequest>() {
           PermissionKind::Geolocation
@@ -1112,6 +1140,16 @@ impl InnerWebView {
             request.deny();
             true
           }
+          PermissionResponse::Prompt if browser_mode && permission_kind != PermissionKind::Other => {
+            let action = match permission_kind {
+              PermissionKind::Geolocation => "access your location",
+              PermissionKind::Notifications => "show notifications",
+              PermissionKind::PointerLock => "capture your pointer",
+              _ => "use this capability",
+            };
+            prompt_page_permission(webview, request, action);
+            true
+          }
           PermissionResponse::Default | PermissionResponse::Prompt => {
             request.deny();
             true
@@ -1120,33 +1158,81 @@ impl InnerWebView {
       }
     });
 
-    // These surfaces have no origin-labelled Zephium broker yet. Claim the
-    // signal and complete the request with a denial rather than allowing a
-    // page to summon privileged native UI.
-    webview.connect_authenticate(|_, request| {
-      request.cancel();
-      true
-    });
-    webview.connect_run_file_chooser(|_, request| {
-      request.cancel();
-      true
-    });
-    webview.connect_run_color_chooser(|_, request| {
-      request.cancel();
-      true
-    });
-    webview.connect_script_dialog(|_, dialog| {
-      dialog.close();
-      true
-    });
-    webview.connect_print(|_, _| true);
-
-    // Download handler
-    web_context.register_download_handler(
-      attributes.download_policy,
-      attributes.download_started_handler.take(),
-      attributes.download_completed_handler.take(),
-    )
+    if browser_mode {
+      webview.connect_enter_fullscreen(|view| {
+        if let Some(window) = view.toplevel().and_then(|w| w.downcast::<gtk::Window>().ok()) {
+          if window.is_active() && view.is_visible() { window.fullscreen(); return false; }
+        }
+        true
+      });
+      webview.connect_leave_fullscreen(|view| {
+        if let Some(window) = view.toplevel().and_then(|w| w.downcast::<gtk::Window>().ok()) {
+          window.unfullscreen();
+        }
+        false
+      });
+      webview.connect_run_file_chooser(|view, request| {
+        let window = view.toplevel().and_then(|w| w.downcast::<gtk::Window>().ok());
+        let uri = view.uri().map(|s| s.to_string());
+        let origin = uri.as_deref().and_then(|s| url::Url::parse(s).ok())
+          .map(|url| url.origin().ascii_serialization()).unwrap_or_default();
+        let Some(window) = window.filter(|w| w.is_active() && view.is_visible()) else {
+          request.cancel(); return true;
+        };
+        let panel = gtk::FileChooserNative::new(Some(&format!("Upload files to {origin}")),
+          Some(&window), gtk::FileChooserAction::Open, Some("Open"), Some("Cancel"));
+        panel.set_select_multiple(request.selects_multiple());
+        if let Some(filter) = request.mime_types_filter() { panel.set_filter(&filter); }
+        let navigated = Rc::new(Cell::new(false));
+        let invalidated = navigated.clone();
+        let handler = view.connect_load_changed(move |_, event| {
+          if event == webkit2gtk::LoadEvent::Started { invalidated.set(true); }
+        });
+        let request = request.clone();
+        let view = view.downgrade();
+        let handler = RefCell::new(Some(handler));
+        panel.connect_response(move |panel, response| {
+          let live = view.upgrade().is_some_and(|view| {
+            if let Some(handler) = handler.borrow_mut().take() { view.disconnect(handler); }
+            !navigated.get() && view.is_visible() && view.uri().map(|s| s.to_string()) == uri
+          });
+          if response == gtk::ResponseType::Accept && live {
+            let files: Vec<String> = panel.filenames().into_iter()
+              .filter_map(|path| path.to_str().map(str::to_owned)).collect();
+            let files: Vec<&str> = files.iter().map(String::as_str).collect();
+            if files.is_empty() { request.cancel(); } else { request.select_files(&files); }
+          } else { request.cancel(); }
+          panel.hide();
+        });
+        panel.show();
+        true
+      });
+    } else {
+      webview.connect_authenticate(|_, request| {
+        request.cancel();
+        true
+      });
+      webview.connect_run_file_chooser(|_, request| {
+        request.cancel();
+        true
+      });
+      webview.connect_run_color_chooser(|_, request| {
+        request.cancel();
+        true
+      });
+      webview.connect_script_dialog(|_, dialog| {
+        dialog.close();
+        true
+      });
+      webview.connect_print(|_, _| true);
+    }
+    if !browser_mode || attributes.download_policy.inspect_metadata(|| ()).is_none() {
+      web_context.register_download_handler(
+        attributes.download_policy,
+        attributes.download_started_handler.take(),
+        attributes.download_completed_handler.take(),
+      );
+    }
   }
 
   fn add_to_container<W>(webview: &WebView, container: &W, attributes: &WebViewAttributes) -> bool

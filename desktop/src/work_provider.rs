@@ -3,18 +3,18 @@
 use std::sync::Arc;
 use zephium_core::{ids::ProfileId, work::WorkError};
 use zephium_ipc::work::{WorkOperationStateV1, WorkOperationV1};
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 use zephium_ipc::work::{WorkReplyV1, WorkResponseV1};
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 #[path = "work_lead_run.rs"]
 mod lead;
 
 pub(crate) struct WorkProviders {
     pub(crate) activity: super::work_activity::WorkActivity,
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     pub(crate) browser: zephium_work_composition::NativeWorkComposition,
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     engine: Arc<zephium_engine::WebviewEngine>,
 }
 impl WorkProviders {
@@ -23,7 +23,7 @@ impl WorkProviders {
         store: Arc<zephium_store::SqliteStore>,
         frames: Option<Arc<zephium_store::WorkFrameStore>>,
     ) -> Self {
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         let _ = (engine, store);
         // The page lane and searches log their refusals as closed facts.
         zephium_app::work_trace::install(Arc::new(record_diagnostic));
@@ -51,9 +51,9 @@ impl WorkProviders {
         }
         Self {
             activity: super::work_activity::WorkActivity::new(frames),
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             browser: zephium_work_composition::NativeWorkComposition::new(engine.clone(), store),
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             engine,
         }
     }
@@ -125,12 +125,12 @@ impl WorkProviders {
                 context,
                 signed_in,
             } => {
-                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
                 {
                     let _ = (shell, command, context, signed_in);
                     Err(WorkError::Unavailable)
                 }
-                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
                 {
                     let zephium_core::work::runtime::WorkRuntimeIntent::BeginAgent {
                         grant, ..
@@ -173,7 +173,7 @@ impl WorkProviders {
 // Synthesis consumes a bounded 32KiB semantic context plus schema/instructions.
 // Its token ceiling is separate from planning; exact provider counting and the
 // original attempt's token/cost limits still decide whether generation starts.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 async fn configure_search_ranking(
     search: zephium_agentic::OpenAiPublicSearch,
     profile: ProfileId,
@@ -185,7 +185,7 @@ async fn configure_search_ranking(
     search.with_decision_ranking(settings.primary, settings.emulation, settings.diagnostic)
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 struct PublicDecisionSettings {
     primary: Option<zephium_agentic::JevDecisionClient>,
     emulation: zephium_agentic::WorkPlanningConfig,
@@ -193,7 +193,7 @@ struct PublicDecisionSettings {
 }
 
 /// `None` is the person's Off: no typed decisions are configured at all.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 async fn public_decision_settings(
     profile: ProfileId,
     transport: zephium_agentic::AgentProviderTransport,
@@ -203,7 +203,7 @@ async fn public_decision_settings(
     if choice == WorkDecisionChoiceV1::Off {
         return Ok(None);
     }
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     let primary = if choice == WorkDecisionChoiceV1::Recommended {
         let key_epoch = super::work_decision::typesafe_presence_epoch();
         let loaded =
@@ -216,7 +216,7 @@ async fn public_decision_settings(
     } else {
         None
     };
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     let primary = {
         let _ = transport;
         None
@@ -249,7 +249,7 @@ async fn public_decision_settings(
 }
 
 async fn credential() -> Result<zephium_agentic::AgentProviderCredential, WorkError> {
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     {
         let started = std::time::Instant::now();
         record_diagnostic(format_args!("work: phase=credential state=requested"));
@@ -270,7 +270,7 @@ async fn credential() -> Result<zephium_agentic::AgentProviderCredential, WorkEr
             .map_err(|_| WorkError::Unavailable)
             .and_then(|result| result.map_err(|_| WorkError::Unavailable))
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         Err(WorkError::Unavailable)
     }

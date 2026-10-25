@@ -1,3 +1,7 @@
+#[cfg(all(feature = "agentic-browser", target_os = "linux"))]
+mod linux_work_clock;
+#[cfg(all(feature = "agentic-browser", target_os = "linux"))]
+pub use linux_work_clock::{work_browser_monotonic_deadline, work_browser_monotonic_now};
 #[cfg(feature = "agentic-browser")]
 mod agent_context_port;
 #[cfg(feature = "agentic-browser")]
@@ -1688,7 +1692,7 @@ impl WebviewEngine {
         store: Arc<dyn zephium_core::ports::store::Store + Send + Sync>,
         notify: impl Fn(ProfileId) + Send + Sync + 'static,
     ) -> bool {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         {
             self.run(move || {
                 host::try_with(move |host| {
@@ -1699,7 +1703,7 @@ impl WebviewEngine {
                 });
             })
         }
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             let _ = (store, notify);
             true
@@ -1743,11 +1747,11 @@ impl WebviewEngine {
     /// none. Off removes every script, handler and channel from every view.
     #[cfg(feature = "agentic-browser")]
     pub fn set_page_reader(&self, policy: Option<page_reader::PageReaderPolicy>) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| host.set_page_reader(policy));
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         let _ = policy;
     }
 
@@ -1762,11 +1766,11 @@ impl WebviewEngine {
             + Send
             + 'static,
     ) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| host.page_read(tab, epoch, Box::new(done)));
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             let _ = (tab, epoch);
             done(Err(page_reader::PageReadFailure::Unavailable));
@@ -1781,11 +1785,11 @@ impl WebviewEngine {
         epoch: u64,
         done: impl FnOnce(Option<String>) + Send + 'static,
     ) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| host.page_selection(tab, epoch, Box::new(done)));
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             let _ = (tab, epoch);
             done(None);
@@ -1803,11 +1807,11 @@ impl WebviewEngine {
             + Send
             + 'static,
     ) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| host.page_outline(tab, epoch, Box::new(done)));
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             let _ = (tab, epoch);
             done(Err(page_reader::PageReadFailure::Unavailable));
@@ -1825,11 +1829,11 @@ impl WebviewEngine {
         proposal: zephium_agentic::SemanticActionProposal,
         done: impl FnOnce(Result<(), page_reader::PageActFailure>) + Send + 'static,
     ) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| host.page_act(tab, epoch, read, proposal, Box::new(done)));
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             let _ = (tab, epoch, read, proposal);
             done(Err(page_reader::PageActFailure::Failed));
@@ -1846,11 +1850,11 @@ impl WebviewEngine {
         quote: String,
         done: impl FnOnce(bool) + Send + 'static,
     ) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| host.page_highlight(tab, epoch, &quote, Box::new(done)));
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             let _ = (tab, epoch, quote);
             done(false);
@@ -1869,13 +1873,13 @@ impl WebviewEngine {
         reduce_motion: bool,
         done: impl FnOnce(Vec<u8>) + Send + 'static,
     ) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| {
                 host.page_marks(tab, epoch, read, marks, reduce_motion, Box::new(done));
             });
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             let _ = (tab, epoch, read, marks, reduce_motion);
             done(Vec::new());
@@ -1885,11 +1889,11 @@ impl WebviewEngine {
     /// Emphasises mark `n` (None: none); `scroll` brings it into view.
     #[cfg(feature = "agentic-browser")]
     pub fn page_mark_focus(&self, tab: ItemId, epoch: u64, n: Option<u8>, scroll: bool) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| host.page_mark_focus(tab, epoch, n, scroll));
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         let _ = (tab, epoch, n, scroll);
     }
 
@@ -1898,22 +1902,22 @@ impl WebviewEngine {
     /// the page.
     #[cfg(feature = "agentic-browser")]
     pub fn page_glow(&self, tab: ItemId, glow: page_reader::PageGlow, reduce_motion: bool) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| host.page_glow(tab, glow, reduce_motion));
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         let _ = (tab, glow, reduce_motion);
     }
 
     /// Removes `tab`'s marks.
     #[cfg(feature = "agentic-browser")]
     pub fn page_marks_clear(&self, tab: ItemId) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| host.page_marks_clear(tab));
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         let _ = tab;
     }
 
@@ -1927,11 +1931,11 @@ impl WebviewEngine {
         reduce_motion: bool,
         done: impl FnOnce(Result<page_reader::PagePick, page_reader::PagePickFailure>) + Send + 'static,
     ) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| host.page_pick(tab, epoch, reduce_motion, Box::new(done)));
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             let _ = (tab, epoch, reduce_motion);
             done(Err(page_reader::PagePickFailure::Unavailable));
@@ -1941,11 +1945,11 @@ impl WebviewEngine {
     /// Ends `tab`'s running pick as cancelled.
     #[cfg(feature = "agentic-browser")]
     pub fn page_pick_cancel(&self, tab: ItemId) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| host.page_pick_cancel(tab));
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         let _ = tab;
     }
 
@@ -1959,11 +1963,11 @@ impl WebviewEngine {
         pick: u64,
         done: impl FnOnce(Option<page_reader::PagePick>) + Send + 'static,
     ) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| host.page_pick_read(tab, epoch, pick, Box::new(done)));
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             let _ = (tab, epoch, pick);
             done(None);
@@ -1973,11 +1977,11 @@ impl WebviewEngine {
     /// Removes the attached outline of `pick`.
     #[cfg(feature = "agentic-browser")]
     pub fn page_pick_clear(&self, tab: ItemId, pick: u64) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let _ = self.run(move || {
             host::try_with(move |host| host.page_pick_clear(tab, pick));
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         let _ = (tab, pick);
     }
 
@@ -2198,7 +2202,7 @@ impl Engine for WebviewEngine {
         call: zephium_core::downloads::DownloadCall,
         done: zephium_core::downloads::DownloadCompletion,
     ) -> bool {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         {
             self.run(move || {
                 host::try_with(move |host| {
@@ -2212,7 +2216,7 @@ impl Engine for WebviewEngine {
                 });
             })
         }
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             let _ = (partition, call);
             done.finish(zephium_core::downloads::DownloadResponse::Error {
@@ -2694,11 +2698,11 @@ impl Engine for WebviewEngine {
         id: ItemId,
         navigation: zephium_core::ports::engine::NavigationPresentationId,
     ) -> NativeDispatch {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
             self.run_for_active_item(id, move |host| host.stop_media_capture(id, navigation))
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {
             let _ = (id, navigation);
             NativeDispatch::Unsupported

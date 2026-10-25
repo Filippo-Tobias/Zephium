@@ -582,7 +582,11 @@ pub(crate) fn service() -> Option<Arc<Service>> {
 }
 
 fn available() -> bool {
-    cfg!(any(target_os = "macos", target_os = "windows")) && SERVICE.get().is_some()
+    cfg!(any(
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "linux"
+    )) && SERVICE.get().is_some()
 }
 
 fn project(view: View) -> AccountV1 {

@@ -1,4 +1,5 @@
-//! Versioned connection secrets stored exclusively in Windows generic credentials.
+//! Versioned connection secrets in the shared native vault, chunked for the
+//! Windows Credential Manager and Linux Secret Service adapters.
 use super::KeychainError;
 use sha2::{Digest, Sha256};
 use zephium_credentials::VaultError;

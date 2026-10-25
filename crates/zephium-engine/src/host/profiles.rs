@@ -795,7 +795,7 @@ impl EngineHost {
         profile: ProfileId,
         completion: Arc<crate::erasure::Completion>,
     ) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         if let Some(downloads) = self
             .downloads
             .as_ref()

@@ -19,12 +19,12 @@ type FrameKey = (WorkAttemptId, WorkStepId, u64);
 type PageChanged = Arc<dyn Fn(WorkChangedV1) + Send + Sync>;
 
 /// Data-only invalidation: neither the receiver nor its callback owns a run.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 struct PageProjectionWake {
     changed: PageChanged,
     scope: WorkChangedV1,
 }
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 impl std::task::Wake for PageProjectionWake {
     fn wake(self: Arc<Self>) {
         self.wake_by_ref();
@@ -69,7 +69,7 @@ impl WorkActivity {
             *observer = Some(changed);
         }
     }
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     pub(crate) fn track(&self, observer: WorkAttemptObserver) {
         let mut evicted = None;
         let frames = observer.retain_pages();

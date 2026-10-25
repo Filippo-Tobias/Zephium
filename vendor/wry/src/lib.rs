@@ -798,6 +798,11 @@ struct WebViewAttributes<'a> {
   /// over both download callbacks.
   pub download_policy: DownloadPolicy,
 
+  /// Enable native GTK page dialogs and delegate downloads to the embedder.
+  /// The embedder must install its context download handler before loading a page.
+  #[cfg(target_os = "linux")]
+  pub linux_browser_mode: bool,
+
   /// A new window request handler to decide if incoming url is allowed to be opened.
   ///
   /// A new window is requested to be opened by the [window.open] API.
@@ -1028,6 +1033,8 @@ impl Default for WebViewAttributes<'_> {
       download_started_handler: Some(Box::new(|_, _| true)),
       download_completed_handler: None,
       download_policy: DownloadPolicy::UseHandlers,
+      #[cfg(target_os = "linux")]
+      linux_browser_mode: false,
       new_window_req_handler: None,
       page_close_policy: PageClosePolicy::Ignore,
       #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -1621,6 +1628,13 @@ impl<'a> WebViewBuilder<'a> {
   /// filename, or destination from the native engine. The deny policy remains
   /// authoritative even if download callbacks are configured before or after
   /// this method. Call this again with `UseHandlers` to re-enable callbacks.
+  #[cfg(target_os = "linux")]
+  /// Enable GTK browser dialogs; downloads must be handled by the embedder.
+  pub fn with_linux_browser_mode(mut self, enabled: bool) -> Self {
+    self.attrs.linux_browser_mode = enabled;
+    self
+  }
+
   pub fn with_download_policy(mut self, policy: DownloadPolicy) -> Self {
     self.attrs.download_policy = policy;
     self

@@ -669,15 +669,9 @@ impl EngineHost {
         #[cfg(target_os = "windows")]
         let navigation_site_scope = site_scope.clone();
         let navigation = NavigationEpochTracker::new();
-        #[cfg(all(
-            feature = "agentic-browser",
-            any(target_os = "macos", target_os = "windows")
-        ))]
+        #[cfg(feature = "agentic-browser")]
         let page_reader: super::page_reader::ReaderSlot = Rc::default();
-        #[cfg(all(
-            feature = "agentic-browser",
-            any(target_os = "macos", target_os = "windows")
-        ))]
+        #[cfg(feature = "agentic-browser")]
         let load_reader = Rc::downgrade(&page_reader);
         #[cfg(target_os = "macos")]
         super::webext::bind_auth_cleanup_fence(
@@ -703,7 +697,7 @@ impl EngineHost {
         );
         #[cfg(target_os = "macos")]
         let load_file_uploads = Rc::downgrade(&file_uploads);
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let download_surface_intent = Arc::new(AtomicBool::new(false));
         let guard_presentation_permit = presentation_permit.clone();
         let load_presentation_permit = presentation_permit.clone();
@@ -1577,7 +1571,10 @@ impl EngineHost {
                     if let Some(broker) = load_file_uploads.upgrade() {
                         broker.cancel();
                     }
-                    #[cfg(all(feature = "agentic-browser", target_os = "windows"))]
+                    #[cfg(all(
+                        feature = "agentic-browser",
+                        any(target_os = "windows", target_os = "linux")
+                    ))]
                     super::page_reader::begin_load(&load_reader);
                     #[cfg(target_os = "macos")]
                     super::page_permissions::queue_navigation_revocation(
@@ -1602,10 +1599,7 @@ impl EngineHost {
                     // SourceChanged ordering, authorizes rendered-content
                     // attribution to the final redirect destination.
                     if load_navigation.is_current(epoch) {
-                        #[cfg(all(
-                            feature = "agentic-browser",
-                            any(target_os = "macos", target_os = "windows")
-                        ))]
+                        #[cfg(feature = "agentic-browser")]
                         super::page_reader::commit(
                             &load_reader,
                             epoch.presentation_id().into_raw(),
@@ -1652,6 +1646,11 @@ impl EngineHost {
                 }
             }
         });
+
+        #[cfg(target_os = "linux")]
+        let builder = builder
+            .with_linux_browser_mode(true)
+            .with_download_policy(DownloadPolicy::UseHandlers);
 
         #[cfg(target_os = "windows")]
         if !self.construction_unproven.insert(partition.profile()) {
@@ -1962,6 +1961,98 @@ impl EngineHost {
             }
             return None;
         }
+        #[cfg(target_os = "linux")]
+        super::downloads::install_linux(
+            &view,
+            self.downloads.as_ref(),
+            partition,
+            event_permit.clone(),
+            download_surface_intent.clone(),
+            navigation.clone(),
+        );
+        #[cfg(all(feature = "agentic-browser", target_os = "linux"))]
+        {
+            use wry::WebViewExtUnix;
+            let committed = navigation.clone();
+            let settled = navigation.clone();
+            *page_reader.borrow_mut() = crate::platform::linux::browse_reader::BrowseReader::new(
+                &view.webview(),
+                id.clone(),
+                super::page_reader::enabled(),
+                Rc::new(move || {
+                    committed
+                        .current_committed()
+                        .map(|e| e.presentation_id().into_raw())
+                }),
+                Rc::new(move || settled.current() == settled.current_committed()),
+            );
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use webkit2gtk::{URIRequestExt, WebViewExt};
+            use wry::WebViewExtUnix;
+            let popup_item = id.clone();
+            let popup_permit = event_permit.clone();
+            let popup_sink = self.sink.clone();
+            let popup_presentation = presentation_permit.clone();
+            let burst = Cell::new((std::time::Instant::now(), 0u8));
+            view.webview().connect_create(move |_, action| {
+                let request = action.request()?;
+                let url = request.uri()?.to_string();
+                let now = std::time::Instant::now();
+                let (start, count) = burst.get();
+                let (start, count) = if now.duration_since(start).as_secs() >= 1 {
+                    (now, 0)
+                } else {
+                    (start, count)
+                };
+                if action.is_user_gesture()
+                    && request.http_method().as_deref() == Some("GET")
+                    && popup_presentation.load(Ordering::Acquire)
+                    && zephium_core::navigation::is_allowed_str(&url)
+                    && count < 8
+                {
+                    burst.set((start, count + 1));
+                    popup_permit.emit(
+                        &popup_sink,
+                        EngineEvent::NewWindowRequested {
+                            id: popup_item.get(),
+                            url,
+                        },
+                    );
+                } else {
+                    popup_permit.emit(
+                        &popup_sink,
+                        EngineEvent::PageOpenBlocked {
+                            id: popup_item.get(),
+                            url: zephium_core::navigation::is_allowed_str(&url).then_some(url),
+                        },
+                    );
+                }
+                // Ordinary GET links become shell-owned tabs. Native popup
+                // adoption is still needed for POST bodies and WindowProxy.
+                None::<gtk::Widget>
+            });
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let capture_item = id.clone();
+            let capture_permit = event_permit.clone();
+            let capture_navigation = navigation.clone();
+            let capture_sink = self.sink.clone();
+            crate::platform::linux::capture::install(&view, move |state| {
+                if let Some(epoch) = capture_navigation.resident_media_epoch() {
+                    capture_permit.emit(
+                        &capture_sink,
+                        EngineEvent::MediaCaptureChanged {
+                            id: capture_item.get(),
+                            navigation: epoch.presentation_id(),
+                            state,
+                        },
+                    );
+                }
+            });
+        }
         // Native hardening and profile-storage attestation must precede
         // content-policy registration, while registration must precede every
         // observer and the first network-producing load. This ordering is the
@@ -2230,7 +2321,7 @@ impl EngineHost {
             content_styles: Arc::new(super::content_styles::DocumentStyleState::default()),
             #[cfg(target_os = "macos")]
             file_uploads,
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             download_surface_intent,
             event_permit,
             navigation,
@@ -2257,10 +2348,7 @@ impl EngineHost {
             #[cfg(target_os = "windows")]
             native_terminal_failure: self.native_terminal_failure.clone(),
             find: None,
-            #[cfg(all(
-                feature = "agentic-browser",
-                any(target_os = "macos", target_os = "windows")
-            ))]
+            #[cfg(feature = "agentic-browser")]
             page_reader,
             view,
             native_resource: None,
@@ -2624,6 +2712,18 @@ fn to_wry(r: Rect) -> wry::Rect {
 }
 
 pub(super) fn raw_content_permission(kind: wry::PermissionKind) -> wry::PermissionResponse {
+    #[cfg(target_os = "linux")]
+    if matches!(
+        kind,
+        wry::PermissionKind::Camera
+            | wry::PermissionKind::Microphone
+            | wry::PermissionKind::Geolocation
+            | wry::PermissionKind::Notifications
+            | wry::PermissionKind::PointerLock
+            | wry::PermissionKind::DisplayCapture
+    ) {
+        return wry::PermissionResponse::Prompt;
+    }
     match kind {
         wry::PermissionKind::Camera | wry::PermissionKind::Microphone if cfg!(windows) => {
             wry::PermissionResponse::Prompt

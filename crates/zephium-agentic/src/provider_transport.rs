@@ -268,14 +268,14 @@ pub fn load_development_openai_credential(
     {
         load_macos_development_openai_credential()
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
-        load_windows_credential(
+        load_native_credential(
             AgentProviderKind::OpenAiResponses,
             "app.zephium.agent-provider.openai",
         )
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         Err(AgentProviderVaultError::Inaccessible)
     }
@@ -288,21 +288,21 @@ pub fn load_development_typesafe_credential(
     {
         load_macos_development_typesafe_credential()
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
-        load_windows_credential(
+        load_native_credential(
             DecisionCredentialProvider::TypeSafe,
             "app.zephium.agent-provider.typesafe",
         )
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         Err(AgentProviderVaultError::Inaccessible)
     }
 }
 
-#[cfg(target_os = "windows")]
-fn load_windows_credential<P: AgentCredentialBinding>(
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn load_native_credential<P: AgentCredentialBinding>(
     provider: P,
     target: &str,
 ) -> Result<AgentProviderCredential<P>, AgentProviderVaultError> {
@@ -385,13 +385,13 @@ pub fn load_macos_development_typesafe_credential(
 /// login keychain fail transiently, so every caller, including the account
 /// session, takes the same turn. A call stuck behind an unanswered OS prompt
 /// fails the ones after it fast instead of queueing them forever.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub(crate) fn keychain_turn() -> Result<zephium_credentials::Turn, zephium_credentials::VaultError>
 {
     zephium_credentials::turn()
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 const fn vault_error(error: zephium_credentials::VaultError) -> AgentProviderVaultError {
     match error {
         zephium_credentials::VaultError::Missing => AgentProviderVaultError::Missing,

@@ -13,6 +13,8 @@ mod stitch;
 
 #[cfg(target_os = "macos")]
 mod apple;
+#[cfg(target_os = "linux")]
+mod pipewire;
 #[cfg(target_os = "windows")]
 mod wasapi;
 
@@ -125,7 +127,18 @@ pub fn preferred_languages() -> Vec<String> {
     #[cfg(target_os = "windows")]
     return windows_preferred_languages();
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    Vec::new()
+    {
+        std::env::var("LANGUAGE")
+            .or_else(|_| std::env::var("LANG"))
+            .unwrap_or_default()
+            .split(':')
+            .filter_map(|tag| {
+                let tag = tag.split('.').next()?.split('@').next()?.replace('_', "-");
+                (!tag.is_empty() && tag != "C" && tag != "POSIX").then_some(tag)
+            })
+            .take(8)
+            .collect()
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -160,12 +173,14 @@ fn windows_preferred_languages() -> Vec<String> {
 
 /// One live take. Dropping it cancels.
 pub struct Capture {
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     inner: Option<platform::Capture>,
 }
 
 #[cfg(target_os = "macos")]
 use apple as platform;
+#[cfg(target_os = "linux")]
+use pipewire as platform;
 #[cfg(target_os = "windows")]
 use wasapi as platform;
 
@@ -178,11 +193,11 @@ impl Capture {
         pause: bool,
         listener: Arc<dyn Listener>,
     ) -> Result<Self, Fault> {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         return Ok(Self {
             inner: Some(platform::Capture::start(recognition, pause, listener)?),
         });
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             let _ = (recognition, pause, listener);
             Err(Fault::Unsupported)
@@ -192,18 +207,18 @@ impl Capture {
     /// Releases the microphone and returns the words or the audio. With the
     /// on-device recognizer this waits briefly for its final words.
     pub fn finish(mut self) -> Result<Outcome, Fault> {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         return match self.inner.take() {
             Some(inner) => inner.finish(),
             None => Ok(Outcome::Nothing),
         };
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         Ok(Outcome::Nothing)
     }
 
     /// Releases the microphone and discards everything.
     pub fn cancel(mut self) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         if let Some(inner) = self.inner.take() {
             inner.cancel();
         }
@@ -212,7 +227,7 @@ impl Capture {
 
 impl Drop for Capture {
     fn drop(&mut self) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         if let Some(inner) = self.inner.take() {
             inner.cancel();
         }
@@ -220,7 +235,10 @@ impl Drop for Capture {
 }
 
 /// The platform-neutral half of a take: level, endings and the upload audio.
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+    allow(dead_code)
+)]
 pub(crate) struct Core {
     state: Mutex<CoreState>,
     listener: Arc<dyn Listener>,
@@ -233,7 +251,10 @@ struct CoreState {
     stopped: bool,
 }
 
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+    allow(dead_code)
+)]
 impl Core {
     pub(crate) fn new(rate: f64, upload: bool, pause: bool, listener: Arc<dyn Listener>) -> Self {
         Self {

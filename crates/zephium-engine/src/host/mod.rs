@@ -12,12 +12,12 @@ mod content_rules;
 mod content_styles;
 mod discard;
 mod dispatch;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 mod download_files;
 #[cfg(target_os = "windows")]
 #[path = "download_files_windows.rs"]
 mod download_files;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub(crate) mod downloads;
 mod element_picker;
 #[cfg(target_os = "macos")]
@@ -36,10 +36,7 @@ mod page_open;
 mod page_ops;
 #[cfg(target_os = "macos")]
 mod page_permissions;
-#[cfg(all(
-    feature = "agentic-browser",
-    any(target_os = "macos", target_os = "windows")
-))]
+#[cfg(feature = "agentic-browser")]
 pub(crate) mod page_reader;
 mod permits;
 mod profiles;
@@ -61,7 +58,10 @@ pub(crate) mod work_frames;
     any(target_os = "macos", target_os = "windows")
 ))]
 mod work_resource;
-#[cfg(feature = "agentic-browser")]
+#[cfg(all(
+    feature = "agentic-browser",
+    any(target_os = "macos", target_os = "windows")
+))]
 pub(crate) use work_resource::visual_store::{FreshNativeStore, FreshStoreLoss};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod work_session_presence;
@@ -188,7 +188,7 @@ struct ObservedView {
     // A current layout may request a view before its first document commits
     // (for example a download URL entered in a new tab). This permits only a
     // native download decision, never document presentation or file access.
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     download_surface_intent: Arc<AtomicBool>,
     event_permit: EventPermit,
     navigation: NavigationEpochTracker,
@@ -241,10 +241,7 @@ struct ObservedView {
     find: Option<crate::platform::imp::FindSession>,
     // Before `view`: the Ask panel's reader removes its scripts and
     // handlers from the view's controller while the view lives.
-    #[cfg(all(
-        feature = "agentic-browser",
-        any(target_os = "macos", target_os = "windows")
-    ))]
+    #[cfg(feature = "agentic-browser")]
     page_reader: page_reader::ReaderSlot,
     view: WebView,
     // Keep this after `view`: fields drop in declaration order, so the native
@@ -507,7 +504,7 @@ pub(crate) struct EngineHost {
     extension_browser_surfaces: HashMap<ProfileId, ExtensionBrowserSurface>,
     #[cfg(target_os = "macos")]
     page_permissions: page_permissions::PagePermissionBroker,
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     pub(crate) downloads: Option<Rc<downloads::Downloads>>,
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     native_open_authority: Arc<crate::NativeOpenAuthority>,

@@ -148,6 +148,7 @@ impl Destination {
                 CString::new(name.as_bytes()).map_err(|_| DownloadError::Destination)?;
             // Same-volume, descriptor-relative and exclusive. There is no
             // check-then-overwrite race, even for concurrent same-name downloads.
+            #[cfg(target_os = "macos")]
             let result = unsafe {
                 libc::renameatx_np(
                     self.staging.as_raw_fd(),
@@ -155,6 +156,16 @@ impl Destination {
                     self.parent.as_raw_fd(),
                     native_name.as_ptr(),
                     libc::RENAME_EXCL,
+                )
+            };
+            #[cfg(target_os = "linux")]
+            let result = unsafe {
+                libc::renameat2(
+                    self.staging.as_raw_fd(),
+                    c"payload".as_ptr(),
+                    self.parent.as_raw_fd(),
+                    native_name.as_ptr(),
+                    libc::RENAME_NOREPLACE,
                 )
             };
             if result == 0 {
@@ -320,6 +331,7 @@ fn map_io(error: std::io::Error) -> DownloadError {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn verify_quarantine(file: &File) -> Result<(), DownloadError> {
     // Read metadata on the held file, not on a path that may have changed.
     let size = unsafe {
@@ -339,10 +351,12 @@ fn verify_quarantine(file: &File) -> Result<(), DownloadError> {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn quarantine(path: &Path, source: &str) -> Result<(), DownloadError> {
     objc2::rc::autoreleasepool(|_| quarantine_in_pool(path, source))
 }
 
+#[cfg(target_os = "macos")]
 fn quarantine_in_pool(path: &Path, source: &str) -> Result<(), DownloadError> {
     use objc2::runtime::AnyObject;
     use objc2_foundation::{
@@ -384,6 +398,40 @@ fn quarantine_in_pool(path: &Path, source: &str) -> Result<(), DownloadError> {
             .map_err(|_| DownloadError::Protection)?;
     }
     Ok(())
+}
+
+// Linux has no system quarantine service. Preserve the origin as standard
+// desktop metadata and never make a downloaded file executable.
+#[cfg(target_os = "linux")]
+fn quarantine(path: &Path, source: &str) -> Result<(), DownloadError> {
+    use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt};
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(map_io)?;
+    let path = CString::new(path.as_os_str().as_bytes()).map_err(|_| DownloadError::Destination)?;
+    let result = unsafe {
+        libc::setxattr(
+            path.as_ptr(),
+            c"user.xdg.origin.url".as_ptr(),
+            source.as_ptr().cast(),
+            source.len(),
+            0,
+        )
+    };
+    if result != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::EOPNOTSUPP) {
+            return Err(map_io(error));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn verify_quarantine(file: &File) -> Result<(), DownloadError> {
+    if file.metadata().map_err(map_io)?.mode() & 0o111 != 0 {
+        Err(DownloadError::Protection)
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
