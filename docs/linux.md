@@ -31,9 +31,13 @@ To produce a standalone executable with embedded frontend assets, without
 building distribution packages:
 
 ```sh
-pnpm -C desktop exec tauri build --debug --no-bundle
-./target/debug/zephium-desktop
+pnpm -C desktop exec tauri build --no-bundle
+./target/release/zephium-desktop
 ```
+
+For a faster development build, add `--debug`; the executable then lives at
+`target/debug/zephium-desktop`. These standalone builds share the normal
+`app.zephium` profile. `pnpm dev` uses the separate `app.zephium.dev` profile.
 
 On machines with limited memory, set `CARGO_BUILD_JOBS=4` and
 `CARGO_PROFILE_DEV_DEBUG=0` for the debug build.
